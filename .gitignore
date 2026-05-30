@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.log
+
+# Distribution / packaging
+MANIFEST
+
+# Arca runtime
+.arca/
+*.pid
+
+# Environment / credentials — never commit these
+.env
+.env.*
+.databrickscfg
+*.key
+*.pem
+*.p12
+
+# Personal / interview docs — kept locally only
+WHITEBOARD_PREP.md
+FASE_2_ACTION_PLAN.md
+arca/INTERVIEW_ANGLE.md
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# PyPI publishing
+.pypirc

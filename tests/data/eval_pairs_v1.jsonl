@@ -1,0 +1,18 @@
+{"a": "how do I remove a file in python", "b": "in python, how can I delete a file", "expect": "hit"}
+{"a": "how do I remove a file in python", "b": "in python, how can I NOT delete a file", "expect": "miss"}
+{"a": "what is the capital of france", "b": "name the capital city of france", "expect": "hit"}
+{"a": "what is the capital of france", "b": "what is the capital of germany", "expect": "miss"}
+{"a": "write a function that sorts a list", "b": "implement a list sorting function", "expect": "hit"}
+{"a": "write a function that sorts a list", "b": "write a function that reverses a list", "expect": "miss"}
+{"a": "explain asyncio.to_thread", "b": "what does asyncio.to_thread do", "expect": "hit"}
+{"a": "explain asyncio.to_thread", "b": "explain threading.Thread", "expect": "miss"}
+{"a": "how do I install torch cpu-only", "b": "install cpu-only torch — how?", "expect": "hit"}
+{"a": "how do I install torch cpu-only", "b": "how do I uninstall torch", "expect": "miss"}
+{"a": "fix this bug where x is None", "b": "help me fix the x-is-None bug", "expect": "hit"}
+{"a": "fix this bug where x is None", "b": "introduce a bug where x is None", "expect": "miss"}
+{"a": "is python 3.12 faster than 3.11", "b": "performance: python 3.12 vs 3.11", "expect": "hit"}
+{"a": "is python 3.12 faster than 3.11", "b": "is python 3.11 slower than 3.10", "expect": "miss"}
+{"a": "write a haiku about autumn", "b": "compose a haiku on the theme of fall", "expect": "hit"}
+{"a": "write a haiku about autumn", "b": "write a haiku about spring", "expect": "miss"}
+{"a": "deploy a fastapi app to kubernetes", "b": "kubernetes deployment for a fastapi service", "expect": "hit"}
+{"a": "deploy a fastapi app to kubernetes", "b": "tear down the fastapi deployment on kubernetes", "expect": "miss"}

@@ -1,0 +1,167 @@
+{
+  "datasets": [
+    {
+      "displayName": "Daily Hits vs Misses",
+      "name": "usage_log_daily",
+      "queryLines": [
+        "SELECT DATE(created_at) AS date,\n",
+        "       SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END) AS hits,\n",
+        "       SUM(CASE WHEN NOT cache_hit THEN 1 ELSE 0 END) AS misses\n",
+        "FROM demo_jedi.arca.usage_log\n",
+        "GROUP BY DATE(created_at)\n",
+        "ORDER BY date"
+      ]
+    },
+    {
+      "displayName": "Hit Rate Percentage",
+      "name": "usage_log_hit_rate",
+      "queryLines": [
+        "SELECT ROUND(100.0 * SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS hit_rate_pct\n",
+        "FROM demo_jedi.arca.usage_log"
+      ]
+    },
+    {
+      "displayName": "Cumulative Cost Saved",
+      "name": "usage_log_cost_saved",
+      "queryLines": [
+        "SELECT ROUND(SUM(cost_saved_usd), 4) AS total_saved_usd\n",
+        "FROM demo_jedi.arca.usage_log"
+      ]
+    },
+    {
+      "displayName": "Top Cached Prompts",
+      "name": "cache_store_top",
+      "queryLines": [
+        "SELECT prompt_text, hit_count, created_at\n",
+        "FROM demo_jedi.arca.cache_store\n",
+        "ORDER BY hit_count DESC\n",
+        "LIMIT 20"
+      ]
+    }
+  ],
+  "displayName": "Arca Cost Analytics",
+  "pages": [
+    {
+      "displayName": "Overview",
+      "layout": [
+        {
+          "position": {"height": 6, "width": 6, "x": 0, "y": 0},
+          "widget": {
+            "name": "widget_daily_hits_misses",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "usage_log_daily",
+                  "disaggregated": false,
+                  "fields": [
+                    {"expression": "`date`", "name": "date"},
+                    {"expression": "`hits`", "name": "hits"},
+                    {"expression": "`misses`", "name": "misses"}
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "x": {"displayName": "Date", "fieldName": "date", "scale": {"type": "temporal"}},
+                "y": {"displayName": "Count", "fields": [
+                  {"displayName": "Hits", "fieldName": "hits"},
+                  {"displayName": "Misses", "fieldName": "misses"}
+                ], "scale": {"type": "quantitative"}}
+              },
+              "frame": {"showTitle": true, "title": "Daily Hits vs Misses"},
+              "version": 3,
+              "widgetType": "bar"
+            }
+          }
+        },
+        {
+          "position": {"height": 3, "width": 3, "x": 6, "y": 0},
+          "widget": {
+            "name": "widget_hit_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "usage_log_hit_rate",
+                  "disaggregated": true,
+                  "fields": [
+                    {"expression": "`hit_rate_pct`", "name": "hit_rate_pct"}
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "value": {"displayName": "Hit Rate %", "fieldName": "hit_rate_pct", "format": {"type": "number-plain", "decimalPlaces": {"type": "exact", "places": 2}}}
+              },
+              "frame": {"showTitle": true, "title": "Hit Rate %"},
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {"height": 3, "width": 3, "x": 9, "y": 0},
+          "widget": {
+            "name": "widget_cost_saved",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "usage_log_cost_saved",
+                  "disaggregated": true,
+                  "fields": [
+                    {"expression": "`total_saved_usd`", "name": "total_saved_usd"}
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "value": {"displayName": "Cost Saved (USD)", "fieldName": "total_saved_usd", "format": {"type": "number-currency", "currencyCode": "USD", "decimalPlaces": {"type": "exact", "places": 4}}}
+              },
+              "frame": {"showTitle": true, "title": "Cumulative Cost Saved"},
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {"height": 6, "width": 6, "x": 6, "y": 3},
+          "widget": {
+            "name": "widget_top_prompts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cache_store_top",
+                  "disaggregated": true,
+                  "fields": [
+                    {"expression": "`prompt_text`", "name": "prompt_text"},
+                    {"expression": "`hit_count`", "name": "hit_count"},
+                    {"expression": "`created_at`", "name": "created_at"}
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "columns": [
+                  {"displayName": "Prompt", "fieldName": "prompt_text", "type": "string"},
+                  {"displayName": "Hit Count", "fieldName": "hit_count", "type": "integer"},
+                  {"displayName": "Created At", "fieldName": "created_at", "type": "datetime"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Top 20 Cached Prompts"},
+              "version": 1,
+              "widgetType": "table"
+            }
+          }
+        }
+      ],
+      "name": "page_overview"
+    }
+  ]
+}

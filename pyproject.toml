@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.25,<2.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arca-proxy"
+version = "0.1.0"
+description = "Local semantic cache proxy for Claude Code, backed by Databricks."
+readme = "README.md"
+requires-python = "==3.11.*"
+license = { text = "MIT" }
+authors = [{ name = "Jedi Hernandez", email = "jericohd@gmail.com" }]
+dependencies = [
+  # --- Phase 0: Databricks bootstrap ---
+  "databricks-vectorsearch>=0.57,<1.0",
+  "databricks-sdk==0.38.*",
+  "databricks-sql-connector==3.7.*",
+  "mlflow-skinny>=3.10.1,<3.11",
+  "pydantic-settings==2.6.*",
+  # --- Phase 1+: proxy runtime (installed now to avoid re-pip on phase transition) ---
+  "fastapi==0.115.*",
+  "uvicorn[standard]==0.32.*",
+  "httpx==0.27.*",
+  "sentence-transformers==3.3.*",
+  "typer[all]==0.15.*",
+  "structlog>=24.0,<25.0",
+  # NOTE: `torch` CPU wheel is installed out-of-band:
+  #   pip install torch==2.4.* --index-url https://download.pytorch.org/whl/cpu
+  # It is deliberately absent from this list so `pip install -e .` does NOT pull CUDA.
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0,<9.0",
+  "pytest-asyncio>=0.24,<0.25",
+]
+
+[project.scripts]
+arca = "arca.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["arca"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-x -q"
+markers = [
+  "integration: tests that hit live Databricks (skipped if DATABRICKS_TOKEN unset)",
+]
