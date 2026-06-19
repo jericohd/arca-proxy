@@ -15,7 +15,7 @@ def readme_text() -> str:
 
 
 def test_readme_has_tagline(readme_text):
-    expected = "A developer using Claude Code pays $0 and waits <50ms for any question they — or a teammate — have already asked."
+    expected = "A developer using Claude Code pays $0 and waits milliseconds for questions they — or a teammate — have already asked."
     assert expected in readme_text
 
 
