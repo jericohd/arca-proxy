@@ -4,7 +4,7 @@ Public API:
     async def embed(text: str) -> np.ndarray   # 384-dim float32, L2-normalized
     def warm_up() -> None                      # eager load; safe to call from lifespan
     def _get_model() -> SentenceTransformer    # thread-safe lazy singleton accessor
-    EMBEDDING_MODEL                            # locked to all-MiniLM-L6-v2
+    EMBEDDING_MODEL                            # BAAI/bge-small-en-v1.5 (384 dims)
     EMBEDDING_DIM                              # 384
 
 The singleton model is loaded at most once per process. Thread-safe init via
@@ -22,16 +22,22 @@ import asyncio
 import os
 import threading
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import structlog
-from sentence_transformers import SentenceTransformer
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 # ---------------------------------------------------------------------------
-# Constants (locked — DB-02 commits the 384-dim index to this exact model)
+# Constants — the 384-dim Databricks Vector Search index is committed to THIS
+# exact model. Changing EMBEDDING_MODEL requires reindexing Databricks VS
+# (the local SQLite L2 store re-embeds for free). bge-small-en-v1.5 replaced
+# all-MiniLM-L6-v2 (2026-06-19): same 384 dims and speed, ~2x paraphrase recall
+# at zero false positives on the eval set (see benchmarks/RESULTS.md).
 # ---------------------------------------------------------------------------
-EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
 EMBEDDING_DIM: int = 384
 
 _log = structlog.get_logger(__name__)
@@ -39,11 +45,11 @@ _log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Singleton state — module-global, guarded by _model_lock for init only
 # ---------------------------------------------------------------------------
-_model: Optional[SentenceTransformer] = None
+_model: "Optional[SentenceTransformer]" = None
 _model_lock = threading.Lock()
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model() -> "SentenceTransformer":
     """Thread-safe lazy singleton. First call loads; subsequent calls return cached.
 
     Uses double-checked locking: the fast path avoids acquiring the lock once the
@@ -56,6 +62,11 @@ def _get_model() -> SentenceTransformer:
     with _model_lock:
         # Slow path — re-check under lock (another thread may have raced us)
         if _model is None:
+            # Lazy import: torch/sentence-transformers load only when embedding
+            # is actually needed, so `import arca.proxy` stays cheap and the
+            # offline test suite runs without the ML stack resident.
+            from sentence_transformers import SentenceTransformer
+
             t0 = time.monotonic()
             cache_folder = os.environ.get("ARCA_MODEL_CACHE_DIR")  # None -> SENTENCE_TRANSFORMERS_HOME / HF defaults
             _model = SentenceTransformer(

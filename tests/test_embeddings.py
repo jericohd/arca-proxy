@@ -84,6 +84,7 @@ async def test_warm_call_is_fast():
     assert elapsed_ms < 250, f"Warm embed took {elapsed_ms:.1f}ms (expected <250ms)"
 
 
-async def test_model_name_is_minilm_l6_v2():
-    """EMBEDDING_MODEL is locked to all-MiniLM-L6-v2 — DB-02 index is 384-dim against this model."""
-    assert EMBEDDING_MODEL == "sentence-transformers/all-MiniLM-L6-v2"
+async def test_model_name_is_bge_small():
+    """EMBEDDING_MODEL is bge-small-en-v1.5 — 384-dim, ~2x recall vs the prior
+    all-MiniLM-L6-v2 at zero false positives. Changing it requires a Databricks VS reindex."""
+    assert EMBEDDING_MODEL == "BAAI/bge-small-en-v1.5"
