@@ -1,0 +1,70 @@
+// Arca cache-quality eval v2 (2026-06-19). Curated, adversarial, developer/Claude-Code-shaped.
+// expect=hit  -> genuine paraphrase; ONE answer satisfies both. The cache SHOULD match.
+// expect=miss -> high lexical overlap but a different correct answer. The cache MUST NOT match
+//                (a cached answer for `a` would be WRONG for `b`). These stress precision.
+// Methodology: hand-curated ground truth; embedded with the production embed() pipeline
+// (symmetric, normalized; single-turn = embedding_text returns the user text verbatim).
+{"a": "how do I read a file in python", "b": "what's the best way to read a file in python", "expect": "hit"}
+{"a": "convert a list to a set in python", "b": "how to turn a python list into a set", "expect": "hit"}
+{"a": "reverse a string in javascript", "b": "how do I reverse a string in js", "expect": "hit"}
+{"a": "what does git rebase do", "b": "explain how git rebase works", "expect": "hit"}
+{"a": "how to center a div with flexbox", "b": "center a div using flexbox", "expect": "hit"}
+{"a": "sql query to count rows in a table", "b": "how do I count the number of rows in a sql table", "expect": "hit"}
+{"a": "how do I catch an exception in python", "b": "python how to handle and catch errors", "expect": "hit"}
+{"a": "what is a python decorator", "b": "explain python decorators", "expect": "hit"}
+{"a": "how to merge two dictionaries in python", "b": "combine two dicts into one in python", "expect": "hit"}
+{"a": "create a virtual environment in python", "b": "how do I set up a python venv", "expect": "hit"}
+{"a": "how to make an http get request in python", "b": "python send a GET request", "expect": "hit"}
+{"a": "difference between let and const in javascript", "b": "let vs const in js", "expect": "hit"}
+{"a": "how do I undo the last git commit", "b": "git revert my most recent commit", "expect": "hit"}
+{"a": "how to install a package with pip", "b": "pip how do I install a package", "expect": "hit"}
+{"a": "write a function to check if a number is prime", "b": "implement a primality test function", "expect": "hit"}
+{"a": "sort a list of dictionaries by a key in python", "b": "python sort a list of dicts by a field", "expect": "hit"}
+{"a": "what does async await do in javascript", "b": "explain async/await in js", "expect": "hit"}
+{"a": "how to read json from a file in python", "b": "python load json from a file", "expect": "hit"}
+{"a": "how do I build a docker image", "b": "build a docker image from a dockerfile", "expect": "hit"}
+{"a": "how to remove duplicates from a list in python", "b": "python deduplicate a list", "expect": "hit"}
+{"a": "what is a rest api", "b": "explain what a REST API is", "expect": "hit"}
+{"a": "how to format a datetime in python", "b": "python format a date as a string", "expect": "hit"}
+{"a": "how do I iterate over a dictionary in python", "b": "loop over a dict in python", "expect": "hit"}
+{"a": "time complexity of quicksort", "b": "what is quicksort's big-O time complexity", "expect": "hit"}
+{"a": "how to write to a file in python", "b": "python save text to a file", "expect": "hit"}
+{"a": "difference between tcp and udp", "b": "tcp vs udp explained", "expect": "hit"}
+{"a": "how to use the map function in python", "b": "python map() how does it work", "expect": "hit"}
+{"a": "what is dependency injection", "b": "explain the dependency injection pattern", "expect": "hit"}
+{"a": "how to split a string in python", "b": "python split a string by a delimiter", "expect": "hit"}
+{"a": "how do I define a class in python", "b": "create a class in python", "expect": "hit"}
+{"a": "what is a lambda function in python", "b": "explain python lambdas", "expect": "hit"}
+{"a": "how to check the python version", "b": "what command shows the python version", "expect": "hit"}
+{"a": "how do I read a file in python", "b": "how do I write a file in python", "expect": "miss"}
+{"a": "reverse a string in python", "b": "reverse a list in python", "expect": "miss"}
+{"a": "how to enable ssl in nginx", "b": "how to disable ssl in nginx", "expect": "miss"}
+{"a": "sort a list in ascending order in python", "b": "sort a list in descending order in python", "expect": "miss"}
+{"a": "how to install numpy", "b": "how to uninstall numpy", "expect": "miss"}
+{"a": "convert a string to int in python", "b": "convert an int to string in python", "expect": "miss"}
+{"a": "how to create a branch in git", "b": "how to delete a branch in git", "expect": "miss"}
+{"a": "merge two dictionaries in python", "b": "merge two lists in python", "expect": "miss"}
+{"a": "how to center a div with flexbox", "b": "how to center a div with css grid", "expect": "miss"}
+{"a": "difference between let and const in javascript", "b": "difference between var and let in javascript", "expect": "miss"}
+{"a": "how to read json in python", "b": "how to read csv in python", "expect": "miss"}
+{"a": "how do I commit in git", "b": "how do I push in git", "expect": "miss"}
+{"a": "python list comprehension", "b": "python dictionary comprehension", "expect": "miss"}
+{"a": "how to make a get request in python", "b": "how to make a post request in python", "expect": "miss"}
+{"a": "how to round a number up in python", "b": "how to round a number down in python", "expect": "miss"}
+{"a": "what does git merge do", "b": "what does git rebase do", "expect": "miss"}
+{"a": "how to add an element to a list in python", "b": "how to remove an element from a list in python", "expect": "miss"}
+{"a": "how to connect to postgres in python", "b": "how to connect to mysql in python", "expect": "miss"}
+{"a": "how to encode base64 in python", "b": "how to decode base64 in python", "expect": "miss"}
+{"a": "how to start a docker container", "b": "how to stop a docker container", "expect": "miss"}
+{"a": "how to catch an exception in python", "b": "how to raise an exception in python", "expect": "miss"}
+{"a": "what is a stack data structure", "b": "what is a queue data structure", "expect": "miss"}
+{"a": "how to write to stdout in python", "b": "how to read from stdin in python", "expect": "miss"}
+{"a": "left join in sql", "b": "inner join in sql", "expect": "miss"}
+{"a": "how to make text bold in css", "b": "how to make text italic in css", "expect": "miss"}
+{"a": "how to serialize an object in python", "b": "how to deserialize an object in python", "expect": "miss"}
+{"a": "how to create a thread in python", "b": "how to create a process in python", "expect": "miss"}
+{"a": "how to truncate a table in sql", "b": "how to drop a table in sql", "expect": "miss"}
+{"a": "what is synchronous code", "b": "what is asynchronous code", "expect": "miss"}
+{"a": "how to open a file for reading in python", "b": "how to open a file for appending in python", "expect": "miss"}
+{"a": "convert a list to a tuple in python", "b": "convert a tuple to a list in python", "expect": "miss"}
+{"a": "how to increase the request timeout", "b": "how to decrease the request timeout", "expect": "miss"}
