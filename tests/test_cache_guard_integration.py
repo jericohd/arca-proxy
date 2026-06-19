@@ -46,6 +46,33 @@ async def test_l2_allows_true_paraphrase_above_threshold():
         assert hit is not None and hit[1] == "h1", "guard wrongly rejected a real paraphrase"
 
 
+def test_nli_stage_off_by_default():
+    """The NLI verifier is opt-in — never engaged (or loaded) unless ARCA_NLI_VERIFY is set."""
+    from arca.nli_verify import nli_enabled
+    assert nli_enabled() is False
+
+
+async def test_nli_stage_rejects_contradiction_when_enabled(monkeypatch):
+    """When enabled, a guard-approved candidate is still rejected if NLI flags a
+    contradiction. Model call is mocked — no 330MB download in CI."""
+    monkeypatch.setattr("arca.cache.nli_enabled", lambda: True)
+    monkeypatch.setattr("arca.cache.is_contradiction", lambda a, b: True)
+    with patch("arca.cache._get_vs_index") as m:
+        # a true paraphrase the deterministic guard ALLOWS — so it reaches the NLI stage
+        m.return_value.similarity_search.return_value = _vs_row("explain python decorators", 0.97)
+        hit = await _l2_lookup(np.zeros(384, dtype=np.float32), None, "what is a python decorator")
+        assert hit is None, "NLI stage failed to reject a flagged contradiction"
+
+
+async def test_nli_stage_allows_when_not_contradiction(monkeypatch):
+    monkeypatch.setattr("arca.cache.nli_enabled", lambda: True)
+    monkeypatch.setattr("arca.cache.is_contradiction", lambda a, b: False)
+    with patch("arca.cache._get_vs_index") as m:
+        m.return_value.similarity_search.return_value = _vs_row("explain python decorators", 0.97)
+        hit = await _l2_lookup(np.zeros(384, dtype=np.float32), None, "what is a python decorator")
+        assert hit is not None and hit[1] == "h1"
+
+
 class _FakeFallback:
     def __init__(self, rows):
         self._rows = rows

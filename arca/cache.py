@@ -25,6 +25,7 @@ from fastapi.responses import Response
 from arca.embeddings import embed
 from arca.normalizer import canonicalize, embedding_text, prompt_hash
 from arca.semantic_guard import is_safe_match
+from arca.nli_verify import is_contradiction, nli_enabled
 from arca.proxy import app, circuit_breaker, register_hooks  # `app` is the public FastAPI instance
 from arca.cache_replay import message_json_to_sse, sse_to_message_json
 from arca.config import get_settings
@@ -163,7 +164,12 @@ def _vs_similarity_search_sync(
         # Polarity guard: reject candidates that flip meaning (encode/decode,
         # X->Y vs Y->X, negation). Required because cosine 0.90 lets these leak.
         if query_text is not None and len(row) >= 5 and row[3]:
-            if not is_safe_match(query_text, embedding_text(str(row[3]))):
+            cand_text = embedding_text(str(row[3]))
+            if not is_safe_match(query_text, cand_text):
+                continue
+            # Opt-in NLI stage (default off). Sync is fine here — this runs in a
+            # worker thread (asyncio.to_thread), not on the event loop.
+            if nli_enabled() and is_contradiction(query_text, cand_text):
                 continue
         return float(score), str(row[0]), str(row[1]).encode("utf-8")
     return None
@@ -209,6 +215,12 @@ async def _local_l2_lookup(
         if query_text is not None:
             candidate_text = embedding_text(str(row.get("prompt_text", "")))
             if not is_safe_match(query_text, candidate_text):
+                continue
+            # Opt-in NLI stage (default off). Offload the sync CPU call so the
+            # event loop is never blocked.
+            if nli_enabled() and await asyncio.to_thread(
+                is_contradiction, query_text, candidate_text
+            ):
                 continue
         return (
             score,
