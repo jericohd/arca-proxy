@@ -7,9 +7,9 @@ Requirements verified: DB-01, DB-02, DB-03, DB-04, DB-05
 
 Usage
 -----
-    python -m arca.databricks.02_verify
+    python -m arca.databricks.verify
     # or
-    python arca/databricks/02_verify.py
+    python arca/databricks/verify.py
 
 Exit codes
 ----------
@@ -24,15 +24,21 @@ import sys
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Locked constants (must match 00_bootstrap.py exactly)
+# Locked constants (must match bootstrap_impl.py exactly)
 # ---------------------------------------------------------------------------
-CATALOG = "demo_jedi"
-SCHEMA = "arca"
-CACHE_TABLE = "demo_jedi.arca.cache_store"
-USAGE_TABLE = "demo_jedi.arca.usage_log"
-ENDPOINT = "arca-vs-endpoint"
-INDEX = "demo_jedi.arca.prompt_index"
+from arca.config import get_settings as _get_settings
+
+_s = _get_settings()
+CATALOG = _s.catalog
+SCHEMA = _s.db_schema
+CACHE_TABLE = _s.cache_table
+USAGE_TABLE = _s.usage_table
+ENDPOINT = _s.vs_endpoint
+INDEX = _s.vs_index
+
+
 def _resolve_mlflow_experiment() -> str:
+    """Lazy — never call the Databricks API at import time."""
     env = os.environ.get("ARCA_MLFLOW_EXPERIMENT")
     if env:
         return env
@@ -42,8 +48,6 @@ def _resolve_mlflow_experiment() -> str:
         return f"/Users/{email}/arca"
     except Exception:
         return "/arca"
-
-MLFLOW_EXPERIMENT = _resolve_mlflow_experiment()
 EMBEDDING_DIMS = 384
 SECRETS_SCOPE = "demo-secrets"
 
@@ -102,7 +106,7 @@ def check_auth(results: list[tuple[str, bool, str]]) -> None:
 
 def check_schema_and_tables(host: str, token: str, http_path: str,
                              results: list[tuple[str, bool, str]]) -> None:
-    """Check 2: SHOW TABLES IN demo_jedi.arca returns cache_store + usage_log."""
+    """Check 2: SHOW TABLES IN <catalog>.<schema> returns cache_store + usage_log."""
     try:
         with _sql_connect(host, token, http_path) as conn:
             cur = conn.cursor()
@@ -217,7 +221,7 @@ def check_mlflow_experiment(results: list[tuple[str, bool, str]]) -> None:
     import mlflow
     try:
         mlflow.set_tracking_uri("databricks")
-        exp = mlflow.get_experiment_by_name(MLFLOW_EXPERIMENT)
+        exp = mlflow.get_experiment_by_name(_resolve_mlflow_experiment())
         if exp is None:
             results.append(("MLflow experiment (DB-05)", False, "experiment not found"))
         elif exp.lifecycle_stage != "active":

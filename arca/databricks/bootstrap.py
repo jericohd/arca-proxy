@@ -1,8 +1,8 @@
-"""Typer-safe bootstrap entry point — wraps 00_bootstrap helpers without sys.exit.
+"""Typer-safe bootstrap entry point — wraps bootstrap_impl helpers without sys.exit.
 
 Used by:
-  - arca/cli.py  ->  arca init         (raises exceptions; Typer handles)
-  - arca/databricks/00_bootstrap.py    (CLI-style; main() calls this + sys.exit)
+  - arca/cli.py  ->  arca init           (raises exceptions; Typer handles)
+  - arca/databricks/bootstrap_impl.py    (CLI-style; main() calls this + sys.exit)
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def bootstrap(skip_vs_endpoint: bool = False) -> dict:
     Args:
         skip_vs_endpoint: if True, do NOT create or gate the VS endpoint.
             `arca init` passes True (endpoint is already ONLINE from Phase 0;
-            re-provisioning would take 10-15 min). `python -m ...00_bootstrap`
+            re-provisioning would take 10-15 min). `python -m ...bootstrap_impl`
             passes False to do full end-to-end provisioning.
 
     Returns:
@@ -58,7 +58,7 @@ def bootstrap(skip_vs_endpoint: bool = False) -> dict:
 
     result: dict = {"experiment_id": None, "endpoint_online": None, "index_created": None}
 
-    # DDL — reuses _run_ddl from 00_bootstrap module
+    # DDL — reuses _run_ddl from bootstrap_impl module
     _impl._run_ddl(host, token, http_path)
 
     # MLflow — reuses _setup_mlflow
@@ -75,10 +75,11 @@ def bootstrap(skip_vs_endpoint: bool = False) -> dict:
     try:
         _impl._gate_endpoint_online(vsc)
         result["endpoint_online"] = True
-    except SystemExit as e:  # legacy 00_bootstrap may still raise SystemExit
+    except SystemExit as e:  # legacy bootstrap_impl may still raise SystemExit
         raise BootstrapError(
             "VS endpoint did not reach ONLINE within 900s. "
-            "Activate Plan B: python -m arca.databricks.plan_b",
+            "Cache runs in degraded local mode (SQLite L2 fallback); "
+            "re-run bootstrap once the endpoint is reachable.",
             exit_code=3,
         ) from e
 

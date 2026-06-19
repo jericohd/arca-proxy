@@ -19,7 +19,7 @@ asyncio.to_thread — see arca/fallback/__init__.py for the pattern.
 
 Usage
 -----
-    python -m arca.databricks.00_bootstrap
+    python -m arca.databricks.bootstrap_impl
 
 Exit codes
 ----------
@@ -37,13 +37,21 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Locked constants — every subsequent phase references these strings.
 # ---------------------------------------------------------------------------
-CATALOG = "demo_jedi"
-SCHEMA = "arca"
-CACHE_TABLE = "demo_jedi.arca.cache_store"
-USAGE_TABLE = "demo_jedi.arca.usage_log"
-ENDPOINT = "arca-vs-endpoint"
-INDEX = "demo_jedi.arca.prompt_index"
+from arca.config import get_settings as _get_settings
+
+_s = _get_settings()
+CATALOG = _s.catalog
+SCHEMA = _s.db_schema
+CACHE_TABLE = _s.cache_table
+USAGE_TABLE = _s.usage_table
+ENDPOINT = _s.vs_endpoint
+INDEX = _s.vs_index
+
+
 def _resolve_mlflow_experiment() -> str:
+    """Resolve lazily at call time — WorkspaceClient().current_user.me() is a
+    NETWORK call and must never run at import time (every `arca` CLI command
+    imports this module's package)."""
     env = os.environ.get("ARCA_MLFLOW_EXPERIMENT")
     if env:
         return env
@@ -53,8 +61,6 @@ def _resolve_mlflow_experiment() -> str:
         return f"/Users/{email}/arca"
     except Exception:
         return "/arca"
-
-MLFLOW_EXPERIMENT = _resolve_mlflow_experiment()
 EMBEDDING_DIMS = 384
 SECRETS_SCOPE = "demo-secrets"
 WARMUP_ID = "warmup-0001"
@@ -163,7 +169,7 @@ def _run_ddl(host: str, token: str, http_path: str) -> None:
         # Create catalog if it doesn't exist (required on fresh workspaces)
         cur.execute(
             f"CREATE CATALOG IF NOT EXISTS {CATALOG} "
-            f"COMMENT 'Arca: Claude Code optimizer — demo_jedi catalog'"
+            f"COMMENT 'Arca: Claude Code optimizer'"
         )
         print(f"[OK]   CREATE CATALOG IF NOT EXISTS {CATALOG}")
 
@@ -175,7 +181,7 @@ def _run_ddl(host: str, token: str, http_path: str) -> None:
             f"CREATE SCHEMA IF NOT EXISTS {SCHEMA} "
             f"COMMENT 'Arca: Claude Code optimizer -- cache + analytics'"
         )
-        print(f"[OK]   Schema demo_jedi.{SCHEMA} created / already exists")
+        print(f"[OK]   Schema {CATALOG}.{SCHEMA} created / already exists")
 
         # Create cache_store table
         cur.execute(_CACHE_STORE_DDL.strip())
@@ -208,17 +214,18 @@ def _setup_mlflow() -> str:
 
     mlflow.set_tracking_uri("databricks")  # picks up DATABRICKS_HOST + TOKEN
 
+    experiment = _resolve_mlflow_experiment()  # resolve once — may hit the network
     try:
-        exp_id = mlflow.create_experiment(MLFLOW_EXPERIMENT)
-        print(f"[OK]   MLflow experiment '{MLFLOW_EXPERIMENT}' created (id={exp_id})")
+        exp_id = mlflow.create_experiment(experiment)
+        print(f"[OK]   MLflow experiment '{experiment}' created (id={exp_id})")
     except mlflow.exceptions.MlflowException as e:
         if "RESOURCE_ALREADY_EXISTS" not in str(e):
             raise
-        exp = mlflow.get_experiment_by_name(MLFLOW_EXPERIMENT)
+        exp = mlflow.get_experiment_by_name(experiment)
         exp_id = exp.experiment_id
-        print(f"[OK]   MLflow experiment '{MLFLOW_EXPERIMENT}' already exists (id={exp_id})")
+        print(f"[OK]   MLflow experiment '{experiment}' already exists (id={exp_id})")
 
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+    mlflow.set_experiment(experiment)
 
     # Log a smoke metric to prove the write path works
     with mlflow.start_run(run_name="bootstrap-smoke"):
@@ -240,7 +247,8 @@ def _gate_endpoint_online(vsc) -> None:
         print(f"[OK]   VS endpoint '{ENDPOINT}' is ONLINE (took {elapsed}s)")
     except Exception as e:
         print(f"[FAIL] VS endpoint did not reach ONLINE within 900s: {e}")
-        print("       Activate Plan B: python -m arca.databricks.plan_b")
+        print("       Cache still runs in degraded local mode (SQLite L2 fallback).")
+        print("       Re-run bootstrap once the endpoint is reachable.")
         sys.exit(3)
 
 
@@ -351,7 +359,7 @@ def main() -> int:
     print()
     print("=" * 60)
     print("Bootstrap complete — all Phase 0 requirements satisfied:")
-    print(f"  [OK] DB-01: schema demo_jedi.arca + tables cache_store / usage_log")
+    print(f"  [OK] DB-01: schema {CATALOG}.{SCHEMA} + tables cache_store / usage_log")
     print(f"  [OK] DB-02: VS endpoint '{ENDPOINT}' ONLINE + Direct Access index")
     print(f"  [OK] DB-03: asyncio.to_thread pattern documented (hot path in Phase 1+)")
     print(f"  [OK] DB-04: SQLite fallback at ~/.arca/pending.db (arca/fallback/)")

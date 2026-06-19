@@ -5,7 +5,7 @@ DATABRICKS_TOKEN (or DATABRICKS_HOST / DATABRICKS_HTTP_PATH) is unset — the
 conftest.py hook handles this transparently.
 
 Tests are READ-ONLY: they query existing Databricks state created by
-00_bootstrap.py and never call CREATE, DROP, or DELETE.
+bootstrap_impl.py and never call CREATE, DROP, or DELETE.
 
 Run with live Databricks:
     pytest tests/test_bootstrap.py -q
@@ -21,13 +21,15 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-ENDPOINT = "arca-vs-endpoint"
-INDEX = "demo_jedi.arca.prompt_index"
-MLFLOW_EXPERIMENT = "/Users/jericohd@gmail.com/arca"
-CACHE_TABLE = "demo_jedi.arca.cache_store"
-USAGE_TABLE = "demo_jedi.arca.usage_log"
+from arca.config import get_settings as _get_settings
+
+_s = _get_settings()
+ENDPOINT = _s.vs_endpoint
+INDEX = _s.vs_index
+CACHE_TABLE = _s.cache_table
+USAGE_TABLE = _s.usage_table
 EMBEDDING_DIMS = 384
-SECRETS_SCOPE = "demo-secrets"
+SECRETS_SCOPE = "demo-secrets"  # optional check — skipped when absent
 
 
 # ---------------------------------------------------------------------------

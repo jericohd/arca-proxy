@@ -7,7 +7,6 @@ Plans 04-02 / 04-04 will extend this file further.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from arca.config import get_settings
 from arca.observability import (
     MODEL_COSTS_PER_MTOK,
     calculate_cost,
@@ -72,15 +72,38 @@ def test_calculate_cost_claude_sonnet_4():
     assert got == pytest.approx(expected, rel=1e-9)
 
 
-def test_calculate_cost_claude_opus_4():
-    got = calculate_cost("claude-opus-4-20250805", 2000, 1000)
+def test_calculate_cost_claude_opus_4_legacy_rates():
+    # claude-opus-4-20250514 (Opus 4.0) bills 15/75 — not the 5/25 of Opus 4.5+.
+    got = calculate_cost("claude-opus-4-20250514", 2000, 1000)
+    expected = (2000 * 15.0 + 1000 * 75.0) / 1_000_000
+    assert got == pytest.approx(expected, rel=1e-9)
+
+
+def test_calculate_cost_opus_4_5_longest_prefix_wins():
+    # claude-opus-4-5 must match its own 5/25 rate, not "claude-opus-4" 15/75.
+    got = calculate_cost("claude-opus-4-5-20251101", 2000, 1000)
     expected = (2000 * 5.0 + 1000 * 25.0) / 1_000_000
     assert got == pytest.approx(expected, rel=1e-9)
 
 
+def test_calculate_cost_opus_4_1():
+    got = calculate_cost("claude-opus-4-1-20250805", 1000, 1000)
+    expected = (1000 * 15.0 + 1000 * 75.0) / 1_000_000
+    assert got == pytest.approx(expected, rel=1e-9)
+
+
 def test_calculate_cost_haiku_3_5():
-    got = calculate_cost("claude-haiku-3-5-20241022", 10000, 5000)
+    # Real legacy id is claude-3-5-haiku-... (number-first naming). This family
+    # previously fell through to the default tier, overstating cost ~4x.
+    got = calculate_cost("claude-3-5-haiku-20241022", 10000, 5000)
     expected = (10000 * 0.80 + 5000 * 4.0) / 1_000_000
+    assert got == pytest.approx(expected, rel=1e-9)
+
+
+def test_calculate_cost_normalized_family_matches():
+    # arca.normalizer strips the date suffix; the table must match that form too.
+    got = calculate_cost("claude-3-5-haiku", 1000, 1000)
+    expected = (1000 * 0.80 + 1000 * 4.0) / 1_000_000
     assert got == pytest.approx(expected, rel=1e-9)
 
 
@@ -239,8 +262,8 @@ async def test_usage_log_insert(databricks_env):
             cur.execute(
                 "SELECT id, cache_hit, model, input_tokens, output_tokens, "
                 "cost_usd, cost_saved_usd, latency_ms, similarity_score "
-                "FROM demo_jedi.arca.usage_log WHERE id = ?",
-                (row_id,),
+                f"FROM {get_settings().usage_table} WHERE id = :id",
+                {"id": row_id},
             )
             rows = cur.fetchall()
             cur.close()
@@ -341,16 +364,8 @@ async def test_post_response_logs_on_miss(monkeypatch):
 # OBS-03 — dashboard module (seeded by Plan 04-03)
 # ---------------------------------------------------------------------------
 def _load_dashboard_module():
-    """Load arca/databricks/04_dashboard.py via importlib.
-
-    The leading digit in the filename makes a standard ``import`` statement
-    invalid Python syntax, so we use importlib to load it dynamically.
-    """
-    path = Path(__file__).resolve().parent.parent / "arca" / "databricks" / "04_dashboard.py"
-    spec = importlib.util.spec_from_file_location("arca_04_dashboard", str(path))
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    """Return the arca.databricks.dashboard module."""
+    import arca.databricks.dashboard as mod
     return mod
 
 
@@ -474,10 +489,10 @@ async def test_session_id_propagates_to_usage_log(monkeypatch):
             break
 
     assert cursor.execute.call_args is not None, "execute never called"
-    # INSERT has (id, session_id, cache_hit, ...) — session_id at index 1
-    args_tuple = cursor.execute.call_args.args[1]
-    assert args_tuple[0] == row_id
-    assert args_tuple[1] == "sess-xyz"
+    # Named parameters (databricks-sql-connector native paramstyle)
+    params = cursor.execute.call_args.args[1]
+    assert params["id"] == row_id
+    assert params["session_id"] == "sess-xyz"
 
 
 # ---------------------------------------------------------------------------

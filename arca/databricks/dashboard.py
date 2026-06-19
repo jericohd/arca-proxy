@@ -10,12 +10,6 @@ Provides:
 
 Legacy DBSQL dashboards were deprecated 2026-01-12; this module uses the
 Lakeview (/api/2.0/lakeview/) API exclusively.
-
-Filename note: this module is named ``04_dashboard.py`` to match the Phase 0
-bootstrap naming convention (``00_bootstrap.py``). Because the leading digit
-makes ``from arca.databricks.04_dashboard import ...`` invalid Python syntax,
-callers that need programmatic access should load it via ``importlib``
-(see ``tests/test_observability.py::test_create_dashboard_integration``).
 """
 from __future__ import annotations
 

@@ -18,6 +18,8 @@ from pathlib import Path
 
 import typer
 import httpx
+
+from arca.config import get_settings
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from rich.console import Console
 from rich.table import Table
@@ -31,10 +33,10 @@ try:
 except Exception:
     bootstrap = None  # type: ignore
 
-try:
-    from sentence_transformers import SentenceTransformer as SentenceTransformer  # noqa: F401
-except Exception:
-    SentenceTransformer = None  # type: ignore
+# Lazy: importing sentence-transformers pulls torch (~2-4s). The CLI must
+# start fast for `arca stats` / `arca tail`; only `arca init` needs the model.
+# Module-level None so tests can patch arca.cli.SentenceTransformer.
+SentenceTransformer = None  # type: ignore
 
 # For arca stats (Plan 03) Delta fallback — expose at module level for patching
 try:
@@ -259,18 +261,24 @@ def init() -> None:
         soft_wrap=True,
     )
     try:
-        SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+        from arca.embeddings import EMBEDDING_MODEL
+        st_cls = SentenceTransformer
+        if st_cls is None:
+            from sentence_transformers import SentenceTransformer as st_cls
+        st_cls(EMBEDDING_MODEL, device="cpu")
     except ImportError:
         _check_torch_guard()
+    except Exception as exc:
+        _console.print(
+            f"[yellow]Embedding model download failed ({exc}). "
+            "Re-run 'arca init' with network access; the proxy will also "
+            "download it on first start.[/yellow]",
+            soft_wrap=True,
+        )
 
     _console.print("Provisioning Lakeview cost-analytics dashboard...", soft_wrap=True)
     try:
-        _dash_spec = importlib.util.spec_from_file_location(
-            "_arca_dash",
-            Path(__file__).parent / "databricks" / "04_dashboard.py",
-        )
-        _dash_mod = importlib.util.module_from_spec(_dash_spec)
-        _dash_spec.loader.exec_module(_dash_mod)
+        from arca.databricks import dashboard as _dash_mod
         dashboard_id = asyncio.run(_dash_mod.create_dashboard_if_missing())
         if dashboard_id:
             host = os.environ.get("DATABRICKS_HOST", "").rstrip("/")
@@ -332,8 +340,8 @@ def _stats_from_delta() -> dict | None:
                     SUM(CASE WHEN NOT cache_hit THEN 1 ELSE 0 END) AS cache_misses,
                     ROUND(100.0 * SUM(CASE WHEN cache_hit THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) AS hit_rate_pct,
                     COALESCE(SUM(cost_saved_usd), 0.0) AS cost_saved_usd
-                FROM demo_jedi.arca.usage_log
-                """
+                FROM {table}
+                """.format(table=get_settings().usage_table)
             )
             row = cur.fetchone()
             if row is None:
@@ -404,9 +412,10 @@ def _doctor_databricks_auth(timeout: int = 5) -> str:
 
 def _doctor_vs_index(timeout: int = 5) -> str:
     from databricks.vector_search.client import VectorSearchClient
+    settings = get_settings()
     vsc = VectorSearchClient()
-    vsc.get_index(endpoint_name="arca-vs-endpoint", index_name="demo_jedi.arca.prompt_index")
-    return "index ONLINE, 384 dims"
+    vsc.get_index(endpoint_name=settings.vs_endpoint, index_name=settings.vs_index)
+    return f"index {settings.vs_index} reachable"
 
 
 def _doctor_mlflow(timeout: int = 5) -> str:

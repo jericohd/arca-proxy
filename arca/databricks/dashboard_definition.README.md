@@ -20,7 +20,7 @@ manually in the Databricks UI (workspace → Dashboards → Create Dashboard, na
 `arca-cost-analytics-template`), publish it, and run:
 
 ```python
-from arca.databricks._04_dashboard import export_template  # see 04_dashboard.py
+from arca.databricks.dashboard import export_template  # see dashboard.py
 export_template("<template_dashboard_id>")
 ```
 

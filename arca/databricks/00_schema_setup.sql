@@ -1,4 +1,4 @@
--- Backup / documentation of DDL in 00_bootstrap.py. Re-running is safe (IF NOT EXISTS).
+-- Backup / documentation of DDL in bootstrap_impl.py. Re-running is safe (IF NOT EXISTS).
 --
 -- Arca Phase 0 — Unity Catalog schema + Delta table definitions
 -- Catalog:  demo_jedi  (pre-existing — DO NOT recreate)
