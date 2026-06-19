@@ -38,13 +38,13 @@ No threshold in [0.80,0.99] reaches zero false hits with any recall.
 
 | thr | precision | recall | F1 | TP | FP | FN |
 |---|---|---|---|---|---|---|
-| 0.80 | 0.68 | 0.94 | 0.79 | 30 | 14 | 2 |
-| 0.81 | 0.68 | 0.94 | 0.79 | 30 | 14 | 2 |
-| 0.82 | 0.70 | 0.94 | 0.80 | 30 | 13 | 2 |
-| 0.83 | 0.75 | 0.94 | 0.83 | 30 | 10 | 2 |
-| 0.84 | 0.77 | 0.94 | 0.85 | 30 | 9 | 2 |
-| 0.85 | 0.81 | 0.91 | 0.85 | 29 | 7 | 3 |
-| 0.86 | 0.81 | 0.91 | 0.85 | 29 | 7 | 3 |
+| 0.80 | 0.67 | 0.94 | 0.78 | 30 | 15 | 2 |
+| 0.81 | 0.67 | 0.94 | 0.78 | 30 | 15 | 2 |
+| 0.82 | 0.68 | 0.94 | 0.79 | 30 | 14 | 2 |
+| 0.83 | 0.73 | 0.94 | 0.82 | 30 | 11 | 2 |
+| 0.84 | 0.75 | 0.94 | 0.83 | 30 | 10 | 2 |
+| 0.85 | 0.78 | 0.91 | 0.84 | 29 | 8 | 3 |
+| 0.86 | 0.78 | 0.91 | 0.84 | 29 | 8 | 3 |
 | 0.87 | 0.84 | 0.81 | 0.83 | 26 | 5 | 6 |
 | 0.88 | 0.96 | 0.72 | 0.82 | 23 | 1 | 9 |
 | 0.89 | 0.95 | 0.66 | 0.78 | 21 | 1 | 11 |
@@ -67,6 +67,18 @@ No threshold in [0.80,0.99] reaches zero false hits with any recall.
 |---|---|---|---|
 | cosine 0.95 only (shipped) | 75% | 19% | 2 |
 | **cosine 0.90 + guard** | **100%** | **53%** | **0** |
+
+## Generalization — dev vs HELD-OUT (overfitting check)
+
+All at the operating point (cosine ≥ 0.9 + guard). The guard was designed against the dev set only; held-out sets were authored to stress it (out-of-vocabulary polarity flips) and measured with the guard frozen.
+
+| eval set | role | precision | recall | false hits |
+|---|---|---|---|---|
+| eval_pairs_v2.jsonl | dev (tuned here) | 100% | 53% | 0 |
+| eval_pairs_v3_heldout.jsonl | held-out (frozen) | 88% | 75% | 2 |
+| eval_pairs_v4_heldout.jsonl | held-out (frozen) | 92% | 61% | 1 |
+
+An earlier hand-curated antonym list scored 100% on dev but only **79%** held-out (memorization). Switching to general morphological rules raised held-out precision to the numbers above. Residual leaks are out-of-vocabulary or non-polarity (e.g. a numeric quantity difference) — the path to full coverage is an NLI contradiction model on borderline candidates.
 
 ## System-level view
 

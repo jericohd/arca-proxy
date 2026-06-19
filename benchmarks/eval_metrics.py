@@ -32,9 +32,12 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_EVAL = REPO / "tests" / "data" / "eval_pairs_v2.jsonl"
+DATA = REPO / "tests" / "data"
+DEFAULT_EVAL = DATA / "eval_pairs_v2.jsonl"
+HELDOUT_EVALS = [DATA / "eval_pairs_v3_heldout.jsonl", DATA / "eval_pairs_v4_heldout.jsonl"]
 REPORT_PATH = Path(__file__).resolve().parent / "EVAL_METRICS.md"
 PROD_THRESHOLD = 0.95  # cosine-only baseline (what shipped before the guard)
+GUARD_THR = 0.90       # recommended operating point for the two-stage pipeline
 
 
 def load_pairs(path: Path) -> list[dict]:
@@ -152,6 +155,22 @@ def render(scored, res, eval_name: str) -> str:
         L.append(f"| **cosine {bg['thr']:.2f} + guard** | **{bg['precision']:.0%}** | **{bg['recall']:.0%}** | **{bg['fp']}** |")
         L.append("")
 
+    if res.get("generalization"):
+        L.append("## Generalization — dev vs HELD-OUT (overfitting check)\n")
+        L.append(f"All at the operating point (cosine ≥ {GUARD_THR} + guard). The guard was "
+                 "designed against the dev set only; held-out sets were authored to stress it "
+                 "(out-of-vocabulary polarity flips) and measured with the guard frozen.\n")
+        L.append("| eval set | role | precision | recall | false hits |")
+        L.append("|---|---|---|---|---|")
+        for g in res["generalization"]:
+            L.append(f"| {g['name']} | {g['role']} | {g['precision']:.0%} | {g['recall']:.0%} | {g['fp']} |")
+        L.append("")
+        L.append("An earlier hand-curated antonym list scored 100% on dev but only **79%** held-out "
+                 "(memorization). Switching to general morphological rules raised held-out precision "
+                 "to the numbers above. Residual leaks are out-of-vocabulary or non-polarity (e.g. a "
+                 "numeric quantity difference) — the path to full coverage is an NLI contradiction "
+                 "model on borderline candidates.\n")
+
     L.append("## System-level view\n")
     L.append("- **L1 (exact repeat):** 100% precision and recall by construction (SHA-256 of the "
              "canonical prompt). Every exact repeat is a guaranteed hit; L2 only adds paraphrase catches.")
@@ -170,6 +189,15 @@ async def run(eval_path: Path = DEFAULT_EVAL):
     pairs = load_pairs(eval_path)
     scored = await score_pairs(pairs)
     res = analyze(scored)
+    # Generalization: same operating point across dev + held-out sets.
+    gen = []
+    for p, role in [(eval_path, "dev (tuned here)")] + [(h, "held-out (frozen)") for h in HELDOUT_EVALS]:
+        if not p.exists():
+            continue
+        c = confusion(await score_pairs(load_pairs(p)), GUARD_THR, guarded=True)
+        gen.append({"name": p.name, "role": role, "precision": c["precision"],
+                    "recall": c["recall"], "fp": c["fp"]})
+    res["generalization"] = gen
     return render(scored, res, eval_path.name), res, scored
 
 

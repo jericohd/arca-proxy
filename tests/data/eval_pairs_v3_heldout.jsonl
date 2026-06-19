@@ -1,0 +1,49 @@
+// Arca cache-quality eval v3 — HELD-OUT generalization set (2026-06-19).
+// Authored to STRESS the polarity guard, not to flatter it. Deliberately includes:
+//   - antonyms NOT in arca.semantic_guard._ANTONYMS (publish/unpublish, zip/unzip,
+//     login/logout, upload/download, activate/deactivate, redo/undo, subscribe/...,
+//     register/...) -> these are EXPECTED to leak; that is the honest signal.
+//   - direction swaps in new domains (celsius/fahrenheit, local/remote) -> general rule.
+//   - entity-difference and different-operation misses the guard cannot catch by design.
+//   - new paraphrase vocabulary to test over-rejection (recall) on unseen wording.
+// The guard is FROZEN: it is NOT edited to pass this set (that would re-overfit).
+{"a": "how to reverse a linked list", "b": "reverse a linked list in code", "expect": "hit"}
+{"a": "what is a hash map", "b": "explain how a hash map works", "expect": "hit"}
+{"a": "how do I parse a yaml file in python", "b": "python read and parse a yaml file", "expect": "hit"}
+{"a": "how to debounce a function in javascript", "b": "js debounce a function call", "expect": "hit"}
+{"a": "what is memoization", "b": "explain memoization with an example", "expect": "hit"}
+{"a": "how to set an environment variable in bash", "b": "bash export an environment variable", "expect": "hit"}
+{"a": "how do I make an api call with fetch", "b": "use fetch to call an api", "expect": "hit"}
+{"a": "what is the difference between a process and a thread", "b": "process vs thread explained", "expect": "hit"}
+{"a": "how to write a unit test in pytest", "b": "pytest how do I write a unit test", "expect": "hit"}
+{"a": "how do I flatten a nested list in python", "b": "python flatten a list of lists", "expect": "hit"}
+{"a": "how to handle a 404 in express", "b": "express how to handle 404 errors", "expect": "hit"}
+{"a": "what is a closure in javascript", "b": "explain closures in js", "expect": "hit"}
+{"a": "how to read environment variables in node", "b": "node how to read env variables", "expect": "hit"}
+{"a": "how do I group by in pandas", "b": "pandas how to use groupby", "expect": "hit"}
+{"a": "what is big o notation", "b": "explain big-o notation", "expect": "hit"}
+{"a": "how to create a rest endpoint in flask", "b": "flask define a rest endpoint", "expect": "hit"}
+{"a": "how do I deep copy an object in python", "b": "python make a deep copy of an object", "expect": "hit"}
+{"a": "what is a race condition", "b": "explain race conditions in concurrency", "expect": "hit"}
+{"a": "how to trim whitespace from a string in python", "b": "python strip leading and trailing spaces", "expect": "hit"}
+{"a": "how to merge two sorted arrays", "b": "combine two sorted arrays into one", "expect": "hit"}
+{"a": "how to publish a package to npm", "b": "how to unpublish a package from npm", "expect": "miss"}
+{"a": "how to subscribe to a kafka topic", "b": "how to unsubscribe from a kafka topic", "expect": "miss"}
+{"a": "how to zip a folder in python", "b": "how to unzip a folder in python", "expect": "miss"}
+{"a": "how to log in a user in django", "b": "how to log out a user in django", "expect": "miss"}
+{"a": "how to upload a file to s3", "b": "how to download a file from s3", "expect": "miss"}
+{"a": "how to activate a virtualenv", "b": "how to deactivate a virtualenv", "expect": "miss"}
+{"a": "how to redo a change in vim", "b": "how to undo a change in vim", "expect": "miss"}
+{"a": "how to register a service worker", "b": "how to unregister a service worker", "expect": "miss"}
+{"a": "how to enable cors in express", "b": "how to disable cors in express", "expect": "miss"}
+{"a": "how to open a database connection", "b": "how to close a database connection", "expect": "miss"}
+{"a": "how to add a remote in git", "b": "how to remove a remote in git", "expect": "miss"}
+{"a": "convert celsius to fahrenheit", "b": "convert fahrenheit to celsius", "expect": "miss"}
+{"a": "migrate a column from int to bigint", "b": "migrate a column from bigint to int", "expect": "miss"}
+{"a": "how to copy files from local to remote", "b": "how to copy files from remote to local", "expect": "miss"}
+{"a": "how to deploy a container to aws", "b": "how to deploy a container to gcp", "expect": "miss"}
+{"a": "how to use redis for caching", "b": "how to use memcached for caching", "expect": "miss"}
+{"a": "how to make a form field required", "b": "how to make a form field not required", "expect": "miss"}
+{"a": "how to sort an array in javascript", "b": "how to shuffle an array in javascript", "expect": "miss"}
+{"a": "how to commit changes in git", "b": "how to stash changes in git", "expect": "miss"}
+{"a": "how to round a float to 2 decimals", "b": "how to round a float to 4 decimals", "expect": "miss"}

@@ -1,0 +1,40 @@
+// Arca cache-quality eval v4 — FRESH held-out set for the morphology-based guard
+// (2026-06-19). The guard was NOT designed against these pairs. Deliberately mixes
+// catchable flips (morphological un/de/dis, in/out, direction swaps) with UNCATCHABLE
+// ones (promote/demote, minify/beautify, increment/reset, quantity/entity diffs) so
+// the residual leak rate is honest, not hidden. Measured once; guard frozen.
+{"a": "how to capitalize a string in python", "b": "python make the first letter uppercase", "expect": "hit"}
+{"a": "how do I check if a key exists in a dict", "b": "python test whether a dict has a key", "expect": "hit"}
+{"a": "how to schedule a cron job", "b": "set up a cron job to run on a schedule", "expect": "hit"}
+{"a": "what is a foreign key in sql", "b": "explain sql foreign keys", "expect": "hit"}
+{"a": "how do I read command line arguments in python", "b": "python parse argv command line args", "expect": "hit"}
+{"a": "how to make a div scrollable", "b": "css make a div scroll", "expect": "hit"}
+{"a": "what is the difference between == and === in javascript", "b": "js == vs === difference", "expect": "hit"}
+{"a": "how to define a default parameter in python", "b": "python function default argument value", "expect": "hit"}
+{"a": "how to count word frequency in a string", "b": "tally how often each word appears in text", "expect": "hit"}
+{"a": "how do I retry a failed request", "b": "implement retry logic for a failing http request", "expect": "hit"}
+{"a": "what is a generator in python", "b": "explain python generators and yield", "expect": "hit"}
+{"a": "how to validate an email with regex", "b": "regex to check if a string is a valid email", "expect": "hit"}
+{"a": "how to measure execution time in python", "b": "python time how long a function takes", "expect": "hit"}
+{"a": "what does the spread operator do in javascript", "b": "explain the js spread operator", "expect": "hit"}
+{"a": "how to create an index in postgres", "b": "postgres add an index to a table", "expect": "hit"}
+{"a": "how to convert a dataframe to csv in pandas", "b": "pandas export a dataframe to a csv file", "expect": "hit"}
+{"a": "how do I merge two branches in git", "b": "git combine two branches together", "expect": "hit"}
+{"a": "how to paginate results in an api", "b": "implement pagination for api results", "expect": "hit"}
+{"a": "how to freeze a thread", "b": "how to unfreeze a thread", "expect": "miss"}
+{"a": "how to block a user", "b": "how to unblock a user", "expect": "miss"}
+{"a": "how to compress a file", "b": "how to decompress a file", "expect": "miss"}
+{"a": "how to encrypt a message", "b": "how to decrypt a message", "expect": "miss"}
+{"a": "how to import data into a table", "b": "how to export data from a table", "expect": "miss"}
+{"a": "how to read from a socket", "b": "how to write to a socket", "expect": "miss"}
+{"a": "how to push to a remote branch", "b": "how to pull from a remote branch", "expect": "miss"}
+{"a": "how to log in with oauth", "b": "how to log out with oauth", "expect": "miss"}
+{"a": "convert km to miles", "b": "convert miles to km", "expect": "miss"}
+{"a": "sync files from laptop to server", "b": "sync files from server to laptop", "expect": "miss"}
+{"a": "how to promote a replica to primary", "b": "how to demote a primary to replica", "expect": "miss"}
+{"a": "how to minify a js bundle", "b": "how to beautify a js bundle", "expect": "miss"}
+{"a": "how to increment a counter", "b": "how to reset a counter", "expect": "miss"}
+{"a": "how to limit a query to 10 rows", "b": "how to limit a query to 100 rows", "expect": "miss"}
+{"a": "how to connect to redis", "b": "how to connect to rabbitmq", "expect": "miss"}
+{"a": "what is the difference between get and post", "b": "what is the difference between put and patch", "expect": "miss"}
+{"a": "how to upgrade a package with pip", "b": "how to downgrade a package with pip", "expect": "miss"}
