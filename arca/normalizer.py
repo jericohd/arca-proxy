@@ -152,6 +152,41 @@ def canonicalize(body: bytes) -> str:
     )
 
 
+def embedding_text(canonical: str) -> str:
+    """Return the text that gets EMBEDDED for semantic (L2) lookup.
+
+    Deliberately not the canonical JSON itself: every request shares the same
+    JSON envelope ("{"messages":[{"content":..."), and that shared boilerplate
+    inflates cosine similarity between unrelated prompts — measured on the
+    committed eval set, unrelated questions wrapped in identical envelopes
+    cross the 0.95 threshold and produce wrong-answer cache hits. Embedding
+    only the conversation content keeps similarity about the words the user
+    actually wrote. The L1 key still hashes the full canonical JSON, so exact
+    matching is unaffected.
+    """
+    try:
+        obj = json.loads(canonical)
+    except ValueError:
+        return canonical
+    parts: list[str] = []
+    for block in obj.get("system") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(str(block.get("text", "")))
+    messages = obj.get("messages") or []
+    # Role prefixes disambiguate turns in multi-turn conversations, but on
+    # single-turn prompts (the common cacheable case) a shared "user: " prefix
+    # is yet more boilerplate that inflates similarity between short unrelated
+    # prompts — measurably enough to cross the hit threshold. Omit it there.
+    multi_turn = len(messages) > 1
+    for msg in messages:
+        role = msg.get("role", "")
+        for block in msg.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = str(block.get("text", ""))
+                parts.append(f"{role}: {text}" if multi_turn else text)
+    return "\n".join(parts) if parts else canonical
+
+
 def prompt_hash(canonical: str) -> str:
     """SHA-256 hex digest (64 lowercase hex chars) of the canonical UTF-8 bytes.
 

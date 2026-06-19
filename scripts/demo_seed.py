@@ -34,9 +34,12 @@ SEED_PROMPTS: list[str] = [
     "Explain circuit breaker pattern in distributed systems",
 ]
 
-CACHE_TABLE = "demo_jedi.arca.cache_store"
-ENDPOINT = "arca-vs-endpoint"
-INDEX = "demo_jedi.arca.prompt_index"
+from arca.config import get_settings as _get_settings
+
+_s = _get_settings()
+CACHE_TABLE = _s.cache_table
+ENDPOINT = _s.vs_endpoint
+INDEX = _s.vs_index
 
 
 def _check_torch_guard() -> None:
@@ -105,9 +108,18 @@ def _insert_delta(row_id: str, prompt_hash_val: str, canonical: str,
             f"""
             INSERT INTO {CACHE_TABLE}
                 (id, prompt_hash, prompt_text, embedding, response_json, model, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, current_timestamp())
+            VALUES (:id, :prompt_hash, :prompt_text,
+                    from_json(:embedding, 'array<float>'), :response_json, :model,
+                    current_timestamp())
             """,
-            (row_id, prompt_hash_val, canonical, embedding, json.dumps(response_json), model),
+            {
+                "id": row_id,
+                "prompt_hash": prompt_hash_val,
+                "prompt_text": canonical,
+                "embedding": json.dumps(embedding),
+                "response_json": json.dumps(response_json),
+                "model": model,
+            },
         )
 
 
@@ -116,7 +128,7 @@ async def seed() -> None:
     print("Seeding Arca cache with 10 prompt pairs for demo...")
 
     from arca.embeddings import embed
-    from arca.normalizer import canonicalize, prompt_hash
+    from arca.normalizer import canonicalize, embedding_text, prompt_hash
     from databricks.vector_search.client import VectorSearchClient
 
     vsc = VectorSearchClient()
@@ -132,7 +144,7 @@ async def seed() -> None:
         }
         canonical = canonicalize(json.dumps(canonical_obj))
         phash = prompt_hash(canonical)
-        vec = await embed(canonical)
+        vec = await embed(embedding_text(canonical))
         row_id = str(uuid.uuid4())
 
         response_json = await _call_anthropic(prompt)

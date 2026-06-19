@@ -195,7 +195,8 @@ def test_init_sequence(monkeypatch):
         result = runner.invoke(app, ["init"])
     assert result.exit_code == 0
     bootstrap_fn.assert_called_once()
-    st.assert_called_once_with("all-MiniLM-L6-v2", device="cpu")
+    from arca.embeddings import EMBEDDING_MODEL
+    st.assert_called_once_with(EMBEDDING_MODEL, device="cpu")
     assert "Provisioning Delta schema and tables" in result.output
     assert "Creating Vector Search index" in result.output
     assert "Setting up MLflow experiment" in result.output

@@ -31,8 +31,10 @@ def test_sse_to_json_tool_use():
     block = msg["content"][0]
     assert block["type"] == "tool_use"
     assert block["name"] == "get_weather"
-    # partial_json concatenated
-    assert block.get("partial_json") == '{"city":"Madrid"}'
+    # input_json_delta fragments are parsed into the real input object —
+    # partial_json is a streaming-only artifact and must not leak into replay.
+    assert block["input"] == {"city": "Madrid"}
+    assert "partial_json" not in block
     assert msg["stop_reason"] == "tool_use"
 
 

@@ -26,11 +26,13 @@ from enum import Enum, auto
 from typing import AsyncGenerator, Awaitable, Callable, TypeVar
 
 import httpx
-from databricks import sql as _dbsql
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import Response, StreamingResponse
 
 from arca.fallback import SQLiteFallback
+
+_log = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -122,8 +124,20 @@ class CircuitBreaker:
     def state(self) -> CBState:
         return self._state
 
-    async def call(self, fn: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
+    async def call(
+        self,
+        fn: Callable[..., Awaitable[T]],
+        *args,
+        timeout: float | None = None,
+        **kwargs,
+    ) -> T:
         """Execute ``fn``, tripping the breaker on repeated failures.
+
+        ``timeout`` (seconds) is enforced INSIDE the breaker so that a slow or
+        hanging dependency is recorded as a failure. Wrapping the breaker in an
+        external ``asyncio.wait_for`` would cancel this coroutine instead --
+        CancelledError is a BaseException and would never be counted, so the
+        breaker could never trip on the most common failure mode.
 
         Raises ``CircuitOpenError`` if the breaker is OPEN and the reset
         timeout has not elapsed. Otherwise propagates the original exception
@@ -140,7 +154,10 @@ class CircuitBreaker:
                     )
 
         try:
-            result = await fn(*args, **kwargs)
+            if timeout is not None:
+                result = await asyncio.wait_for(fn(*args, **kwargs), timeout)
+            else:
+                result = await fn(*args, **kwargs)
         except Exception:
             async with self._lock:
                 now = time.monotonic()
@@ -247,19 +264,25 @@ async def lifespan(app: FastAPI):
     await app.state.sqlite_fallback.start()
     try:
         host = os.environ["DATABRICKS_HOST"].replace("https://", "").replace("http://", "")
+        from databricks import sql as _dbsql  # lazy: connector optional for local-only mode
+
         app.state.sql = await asyncio.to_thread(
             _dbsql.connect,
             server_hostname=host,
             http_path=os.environ["DATABRICKS_HTTP_PATH"],
             access_token=os.environ["DATABRICKS_TOKEN"],
         )
-    except KeyError:
+    except KeyError as exc:
         # PRXY-05: Databricks env missing → app.state.sql stays None;
-        # arca.cache write-back logs + skips Delta INSERT; queries fall through to Anthropic.
-        pass
-    except Exception:
+        # arca.cache write-back skips Delta INSERT; cache runs in local mode.
+        _log.info("databricks_disabled_missing_env", missing=str(exc))
+    except Exception as exc:
         # Any other connection failure: degrade gracefully, proxy still serves pass-through.
-        pass
+        _log.warning(
+            "databricks_connect_failed_running_local_only",
+            err=str(exc),
+            err_type=type(exc).__name__,
+        )
 
     # Phase 4 OBS-02: observability session lifecycle
     # Local import (matches `warm_up` pattern). We also import the module so
@@ -370,13 +393,36 @@ async def _stream_and_buffer(
                 if b"event: message_stop" in chunk:
                     complete = True
                     break
-        if complete and buffer:
-            await _post_response_hook(request, b"".join(buffer))
-    except Exception:
-        # Discard partial buffer — never cache incomplete responses
-        pass
+        raw = b"".join(buffer)
+        if not complete and raw and upstream.status_code == 200:
+            # Non-streaming /v1/messages responses are plain JSON — no
+            # message_stop event ever arrives. A parseable body with
+            # type == "message" is by definition complete and cacheable.
+            complete = _is_complete_json_message(raw)
+        if complete and raw:
+            await _post_response_hook(request, raw)
+    except Exception as exc:
+        # Discard partial buffer — never cache incomplete responses.
+        # The client sees a truncated stream; leave evidence in the log.
+        _log.warning(
+            "upstream_stream_aborted_buffer_discarded",
+            err=str(exc),
+            err_type=type(exc).__name__,
+        )
     finally:
         await upstream.aclose()
+
+
+def _is_complete_json_message(raw: bytes) -> bool:
+    """True when ``raw`` is a complete non-streaming /v1/messages JSON body."""
+    stripped = raw.lstrip()
+    if not stripped.startswith(b"{"):
+        return False
+    try:
+        obj = json.loads(stripped)
+    except ValueError:
+        return False
+    return isinstance(obj, dict) and obj.get("type") == "message"
 
 
 # ---------------------------------------------------------------------------

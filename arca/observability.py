@@ -3,7 +3,7 @@
 OBS-01 (this module, Plan 04-01):
   - extract_tokens(raw_sse_bytes) -> (input_tokens, output_tokens)
   - calculate_cost(model, in_tok, out_tok) -> USD
-  - log_usage_event(...) fire-and-forget INSERT into demo_jedi.arca.usage_log
+  - log_usage_event(...) fire-and-forget INSERT into the usage_log Delta table
   - _insert_usage_log_sync(...) sync helper run under app.state.sql_lock
 
 OBS-02 / 04 wiring stubs:
@@ -25,6 +25,7 @@ from typing import Optional
 
 import structlog
 
+from arca.config import get_settings
 from arca.proxy import app
 
 _log = structlog.get_logger(__name__)
@@ -33,7 +34,9 @@ _log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-USAGE_TABLE = "demo_jedi.arca.usage_log"
+def _usage_table() -> str:
+    """Fully-qualified usage_log table name from ARCA_CATALOG/ARCA_SCHEMA env."""
+    return get_settings().usage_table
 
 # OBS-02 — MLflow session tracking.
 # Tracking URI "databricks" reads DATABRICKS_HOST + DATABRICKS_TOKEN from env.
@@ -60,12 +63,23 @@ def _mlflow_experiment_path() -> str:
 # Keys are MODEL-FAMILY prefixes; matched via startswith() after
 # lowercasing and replacing "." with "-" in the incoming model string.
 MODEL_COSTS_PER_MTOK: dict[str, tuple[float, float]] = {
-    "claude-opus-4":     (5.0,  25.0),
-    "claude-sonnet-4":   (3.0,  15.0),
-    "claude-haiku-4":    (1.0,   5.0),
-    "claude-haiku-3-5":  (0.80,  4.0),
-    "claude-haiku-3":    (0.25,  1.25),
-    "claude-sonnet-3-7": (3.0,  15.0),
+    # Current generation (model ids: claude-<family>-<major>-<minor>)
+    "claude-fable-5":    (10.0, 50.0),
+    "claude-opus-4-8":   (5.0,  25.0),
+    "claude-opus-4-7":   (5.0,  25.0),
+    "claude-opus-4-6":   (5.0,  25.0),
+    "claude-opus-4-5":   (5.0,  25.0),
+    "claude-opus-4-1":   (15.0, 75.0),
+    "claude-opus-4":     (15.0, 75.0),   # claude-opus-4-0 / claude-opus-4-20250514
+    "claude-sonnet-4":   (3.0,  15.0),   # sonnet 4.0 through 4.6 share rates
+    "claude-haiku-4":    (1.0,   5.0),   # haiku 4.5
+    # Legacy generation (model ids: claude-<major>-<minor>-<family>)
+    "claude-3-7-sonnet": (3.0,  15.0),
+    "claude-3-5-sonnet": (3.0,  15.0),
+    "claude-3-5-haiku":  (0.80,  4.0),
+    "claude-3-sonnet":   (3.0,  15.0),
+    "claude-3-haiku":    (0.25,  1.25),
+    "claude-3-opus":     (15.0, 75.0),
     "default":           (3.0,  15.0),
 }
 
@@ -86,6 +100,15 @@ def extract_tokens(raw: bytes) -> tuple[int, int]:
     """
     input_tokens = 0
     output_tokens = 0
+    stripped = raw.lstrip()
+    if stripped.startswith(b"{"):
+        # Non-streaming /v1/messages body: usage lives on the message itself.
+        try:
+            obj = json.loads(stripped)
+            usage = (obj.get("usage") or {}) if isinstance(obj, dict) else {}
+            return int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+        except (ValueError, TypeError):
+            return 0, 0
     for m in _DATA_LINE.finditer(raw):
         payload = m.group(1)
         try:
@@ -124,13 +147,13 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """
     model_normalized = (model or "").lower().replace(".", "-")
     in_rate, out_rate = MODEL_COSTS_PER_MTOK["default"]
-    # Iterate deterministically in insertion order; longest-specific first would
-    # be safer in theory but our prefix set has no ambiguity.
-    for prefix, rates in MODEL_COSTS_PER_MTOK.items():
-        if prefix == "default":
-            continue
+    # Longest prefix wins: "claude-opus-4-5" must match its own rate, not
+    # the shorter "claude-opus-4" (a different price point).
+    for prefix in sorted(
+        (k for k in MODEL_COSTS_PER_MTOK if k != "default"), key=len, reverse=True
+    ):
         if model_normalized.startswith(prefix):
-            in_rate, out_rate = rates
+            in_rate, out_rate = MODEL_COSTS_PER_MTOK[prefix]
             break
     return (input_tokens * in_rate + output_tokens * out_rate) / 1_000_000
 
@@ -173,7 +196,7 @@ async def log_usage_event(
     latency_ms: int,
     similarity_score: Optional[float],
 ) -> str:
-    """Fire-and-forget write to demo_jedi.arca.usage_log.
+    """Fire-and-forget write to the usage_log Delta table.
 
     Returns the row_id (uuid4) the row will be written with. Never blocks
     the caller on the DB write (uses asyncio.create_task + asyncio.to_thread).
@@ -217,7 +240,10 @@ async def log_usage_event(
             acc["hit_count"] = acc.get("hit_count", 0) + 1
         acc["cost_usd_total"] = acc.get("cost_usd_total", 0.0) + cost_usd
         acc["cost_saved_usd_total"] = acc.get("cost_saved_usd_total", 0.0) + cost_saved_usd
-        acc.setdefault("latencies_ms", []).append(latency_ms)
+        latencies = acc.setdefault("latencies_ms", [])
+        latencies.append(latency_ms)
+        if len(latencies) > 10_000:  # bound memory for long-lived sessions
+            del latencies[: len(latencies) - 10_000]
 
     conn = getattr(app.state, "sql", None)
     if conn is None:
@@ -264,7 +290,7 @@ def _insert_usage_log_sync(
     latency_ms: int,
     similarity_score: Optional[float],
 ) -> None:
-    """Single-row INSERT into demo_jedi.arca.usage_log.
+    """Single-row INSERT into the configured usage_log table.
 
     Serialized by ``app.state.sql_lock`` (threading.Lock — databricks-sql-connector
     is NOT thread-safe). Silently returns if ``app.state.sql`` is None.
@@ -277,24 +303,27 @@ def _insert_usage_log_sync(
     with lock:
         cur = conn.cursor()
         cur.execute(
-            f"""INSERT INTO {USAGE_TABLE}
+            f"""INSERT INTO {_usage_table()}
                 (id, session_id, cache_hit, model,
                  input_tokens, output_tokens,
                  cost_usd, cost_saved_usd,
                  latency_ms, similarity_score, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp())""",
-            (
-                row_id,
-                session_id,
-                cache_hit,
-                model,
-                input_tokens,
-                output_tokens,
-                cost_usd,
-                cost_saved_usd,
-                latency_ms,
-                similarity_score,
-            ),
+                VALUES (:id, :session_id, :cache_hit, :model,
+                        :input_tokens, :output_tokens,
+                        :cost_usd, :cost_saved_usd,
+                        :latency_ms, :similarity_score, current_timestamp())""",
+            {
+                "id": row_id,
+                "session_id": session_id,
+                "cache_hit": cache_hit,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": cost_usd,
+                "cost_saved_usd": cost_saved_usd,
+                "latency_ms": latency_ms,
+                "similarity_score": similarity_score,
+            },
         )
         cur.close()
 
