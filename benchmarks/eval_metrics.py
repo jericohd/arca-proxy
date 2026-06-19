@@ -1,21 +1,23 @@
 """Rigorous cache-quality eval for Arca's semantic (L2) layer.
 
-Reports precision / recall / F1 with Wilson 95% confidence intervals and a
-DATA-DRIVEN safe operating threshold, computed through the production embedding
-pipeline (arca.embeddings.embed — symmetric, L2-normalized; for single-turn
-prompts this is exactly what the proxy embeds).
+Reports precision / recall / F1 with Wilson 95% confidence intervals for two
+pipelines, computed through the production embedding pipeline
+(arca.embeddings.embed — symmetric, L2-normalized; for single-turn prompts this
+is exactly what the proxy embeds):
 
-Framing — a cache "fires" when cosine(a, b) >= threshold:
+  1. Cosine only          — a single similarity threshold (the naive cache)
+  2. Cosine + polarity guard — retrieve-then-verify (arca.semantic_guard)
+
+Framing — a cache "fires" when the pipeline accepts a candidate:
     TP = hit  pair fires   -> correct reuse
     FP = miss pair fires    -> FALSE HIT: a wrong cached answer would be served  ← the dangerous one
     FN = hit  pair misses   -> a real repeat we failed to reuse
 Precision = TP/(TP+FP)  "when the cache fires, how often is it correct"
 Recall    = TP/(TP+FN)  "of real repeats, how many we catch"
 
-Backend-agnostic: this measures the embedding model's ability to separate
-paraphrase from near-miss. The number is identical whether the vectors are
-stored in Databricks Vector Search, Databricks Lakebase (v2.0 / PLAT-02), or
-the local SQLite fallback — so it transfers directly to the Databricks build.
+Backend-agnostic: this measures the embedding model + guard, identical whether
+vectors live in Databricks Vector Search, Databricks Lakebase (v2.0 / PLAT-02),
+or the local SQLite fallback.
 
 Run:  python benchmarks/eval_metrics.py
 Writes benchmarks/EVAL_METRICS.md and prints it.
@@ -32,7 +34,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_EVAL = REPO / "tests" / "data" / "eval_pairs_v2.jsonl"
 REPORT_PATH = Path(__file__).resolve().parent / "EVAL_METRICS.md"
-PROD_THRESHOLD = 0.95  # arca.config default; the value the proxy actually ships
+PROD_THRESHOLD = 0.95  # cosine-only baseline (what shipped before the guard)
 
 
 def load_pairs(path: Path) -> list[dict]:
@@ -56,106 +58,119 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, center - half), min(1.0, center + half))
 
 
-async def score_pairs(pairs: list[dict]) -> list[tuple[str, float]]:
-    """Return [(expect, cosine_score)] using the production embed() pipeline.
-
-    Embeds each unique string once. embed() returns L2-normalized vectors, so
-    cosine == dot product.
-    """
+async def score_pairs(pairs: list[dict]) -> list[tuple[str, float, str, str]]:
+    """Return [(expect, cosine_score, a, b)] using the production embed() pipeline."""
     from arca.embeddings import embed
 
     uniq = sorted({p["a"] for p in pairs} | {p["b"] for p in pairs})
-    vecs = {}
-    for s in uniq:
-        vecs[s] = await embed(s)
-    return [(p["expect"], float(np.dot(vecs[p["a"]], vecs[p["b"]]))) for p in pairs]
+    vecs = {s: await embed(s) for s in uniq}
+    return [(p["expect"], float(np.dot(vecs[p["a"]], vecs[p["b"]])), p["a"], p["b"]) for p in pairs]
 
 
-def confusion(scored: list[tuple[str, float]], thr: float) -> dict:
-    tp = sum(1 for e, s in scored if e == "hit" and s >= thr)
-    fp = sum(1 for e, s in scored if e == "miss" and s >= thr)
-    n_hit = sum(1 for e, _ in scored if e == "hit")
-    n_miss = sum(1 for e, _ in scored if e == "miss")
-    fn = n_hit - tp
+def confusion(scored, thr: float, guarded: bool = False) -> dict:
+    from arca.semantic_guard import is_safe_match
+
+    def fires(c: float, a: str, b: str) -> bool:
+        return c >= thr and (not guarded or is_safe_match(a, b))
+
+    tp = sum(1 for e, c, a, b in scored if e == "hit" and fires(c, a, b))
+    fp = sum(1 for e, c, a, b in scored if e == "miss" and fires(c, a, b))
+    n_hit = sum(1 for e, *_ in scored if e == "hit")
+    n_miss = sum(1 for e, *_ in scored if e == "miss")
     precision = tp / (tp + fp) if (tp + fp) else 1.0
     recall = tp / n_hit if n_hit else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
-    return {"thr": thr, "tp": tp, "fp": fp, "fn": fn, "n_hit": n_hit,
+    return {"thr": thr, "tp": tp, "fp": fp, "fn": n_hit - tp, "n_hit": n_hit,
             "n_miss": n_miss, "precision": precision, "recall": recall, "f1": f1}
 
 
-def analyze(scored: list[tuple[str, float]]) -> dict:
+def _best_safe(scored, guarded: bool) -> dict | None:
+    """Lowest threshold with zero false hits (= max recall at precision 1.0)."""
+    rows = [confusion(scored, round(t, 2), guarded) for t in np.arange(0.80, 0.991, 0.01)]
+    safe = [r for r in rows if r["fp"] == 0 and r["tp"] > 0]
+    return min(safe, key=lambda r: r["thr"]) if safe else None
+
+
+def analyze(scored) -> dict:
     sweep = [round(t, 2) for t in np.arange(0.80, 0.991, 0.01)]
-    rows = [confusion(scored, t) for t in sweep]
-    # Safe operating point: the LOWEST threshold with zero false hits (max recall while precision=1.0)
-    safe = [r for r in rows if r["fp"] == 0]
-    safe_op = min(safe, key=lambda r: r["thr"]) if safe else None
-    prod = confusion(scored, PROD_THRESHOLD)
-    return {"rows": rows, "safe_op": safe_op, "prod": prod}
+    return {
+        "rows_cos": [confusion(scored, t, False) for t in sweep],
+        "rows_grd": [confusion(scored, t, True) for t in sweep],
+        "best_cos": _best_safe(scored, False),
+        "best_grd": _best_safe(scored, True),
+        "prod_cos": confusion(scored, PROD_THRESHOLD, False),
+    }
 
 
 def render(scored, res, eval_name: str) -> str:
-    n_hit = sum(1 for e, _ in scored if e == "hit")
-    n_miss = sum(1 for e, _ in scored if e == "miss")
+    from arca.embeddings import EMBEDDING_MODEL
+
+    n_hit = sum(1 for e, *_ in scored if e == "hit")
+    n_miss = sum(1 for e, *_ in scored if e == "miss")
     L = []
     L.append("# Arca cache-quality metrics (semantic L2)\n")
-    from arca.embeddings import EMBEDDING_MODEL
     L.append(f"Eval set: `{eval_name}` — {len(scored)} pairs ({n_hit} hit / {n_miss} miss). "
              f"Model: `{EMBEDDING_MODEL}`. Generated by `python benchmarks/eval_metrics.py`.\n")
-    L.append("`fp` = false hits (a wrong cached answer would be served) — the metric that must stay at 0.\n")
+    L.append("`fp` = false hits (a wrong cached answer would be served) — must be 0.\n")
 
-    L.append("## Threshold sweep\n")
-    L.append("| thr | precision | recall | F1 | TP | FP | FN |")
-    L.append("|---|---|---|---|---|---|---|")
-    for r in res["rows"]:
-        mark = "  ← prod" if abs(r["thr"] - PROD_THRESHOLD) < 1e-9 else ""
-        L.append(f"| {r['thr']:.2f} | {r['precision']:.2f} | {r['recall']:.2f} | "
-                 f"{r['f1']:.2f} | {r['tp']} | {r['fp']} | {r['fn']} |{mark}")
-    L.append("")
+    def table(rows):
+        out = ["| thr | precision | recall | F1 | TP | FP | FN |", "|---|---|---|---|---|---|---|"]
+        for r in rows:
+            out.append(f"| {r['thr']:.2f} | {r['precision']:.2f} | {r['recall']:.2f} | "
+                       f"{r['f1']:.2f} | {r['tp']} | {r['fp']} | {r['fn']} |")
+        return "\n".join(out)
 
-    prod = res["prod"]
-    fp_lo, fp_hi = wilson(prod["fp"], prod["n_miss"])
-    rc_lo, rc_hi = wilson(prod["tp"], prod["n_hit"])
-    L.append(f"## At the production threshold ({PROD_THRESHOLD})\n")
-    L.append(f"- **Precision: {prod['precision']:.1%}** ({prod['fp']} false hits / {prod['n_miss']} adversarial misses). "
-             f"False-hit rate 95% CI (Wilson): **{fp_lo:.1%}–{fp_hi:.1%}**.")
-    L.append(f"- **Recall: {prod['recall']:.1%}** ({prod['tp']}/{prod['n_hit']} paraphrases caught). "
-             f"95% CI: {rc_lo:.1%}–{rc_hi:.1%}.")
-    L.append(f"- F1: {prod['f1']:.2f}\n")
-
-    op = res["safe_op"]
-    if op:
-        op_rc_lo, op_rc_hi = wilson(op["tp"], op["n_hit"])
-        L.append("## Safe operating point (max recall at zero false hits)\n")
-        L.append(f"- Lowest threshold with **0 false hits: {op['thr']:.2f}** "
-                 f"→ recall **{op['recall']:.1%}** ({op['tp']}/{op['n_hit']}), 95% CI {op_rc_lo:.1%}–{op_rc_hi:.1%}.")
-        if abs(op["thr"] - PROD_THRESHOLD) > 1e-9:
-            direction = "raise" if op["thr"] > PROD_THRESHOLD else "lower"
-            L.append(f"- Production threshold could be {direction}d to {op['thr']:.2f} for this set.")
-        L.append("")
+    L.append("## Pipeline 1 — cosine only (naive)\n")
+    L.append(table(res["rows_cos"]) + "\n")
+    pc = res["prod_cos"]
+    fp_lo, fp_hi = wilson(pc["fp"], pc["n_miss"])
+    L.append(f"At the shipped threshold {PROD_THRESHOLD}: **precision {pc['precision']:.0%}** "
+             f"({pc['fp']} false hits / {pc['n_miss']}), recall {pc['recall']:.0%}. "
+             f"False-hit rate 95% CI {fp_lo:.0%}–{fp_hi:.0%}.")
+    bc = res["best_cos"]
+    if bc:
+        L.append(f"Lowest zero-false-hit threshold: {bc['thr']:.2f} → recall only {bc['recall']:.0%}.\n")
     else:
-        L.append("## Safe operating point\n")
-        L.append("- No threshold in [0.80, 0.99] reaches zero false hits — the model cannot "
-                 "separate these adversarial pairs safely. Needs a stronger model or a second-stage check.\n")
+        L.append("No threshold in [0.80,0.99] reaches zero false hits with any recall.\n")
+
+    L.append("## Pipeline 2 — cosine + polarity guard (retrieve-then-verify)\n")
+    L.append("`arca.semantic_guard.is_safe_match` rejects candidates that flip meaning "
+             "(negation / antonym / direction swap). Deterministic, <1ms, no model.\n")
+    L.append(table(res["rows_grd"]) + "\n")
+    bg = res["best_grd"]
+    if bg:
+        rc_lo, rc_hi = wilson(bg["tp"], bg["n_hit"])
+        L.append(f"**Recommended operating point: cosine ≥ {bg['thr']:.2f} + guard → "
+                 f"precision 100% (0 false hits), recall {bg['recall']:.0%}** "
+                 f"({bg['tp']}/{bg['n_hit']}, 95% CI {rc_lo:.0%}–{rc_hi:.0%}).\n")
+
+    if bg:
+        L.append("## Before / after\n")
+        L.append("| pipeline | precision | recall | false hits |")
+        L.append("|---|---|---|---|")
+        L.append(f"| cosine {PROD_THRESHOLD} only (shipped) | {pc['precision']:.0%} | {pc['recall']:.0%} | {pc['fp']} |")
+        L.append(f"| **cosine {bg['thr']:.2f} + guard** | **{bg['precision']:.0%}** | **{bg['recall']:.0%}** | **{bg['fp']}** |")
+        L.append("")
 
     L.append("## System-level view\n")
-    L.append("- **L1 (exact repeat):** 100% precision and 100% recall by construction "
-             "(SHA-256 of the canonical prompt). Every exact repeat is a guaranteed hit.")
-    L.append("- **L2 (semantic):** the table above. L2 only adds *paraphrase* catches on top of L1, "
-             "and only when it can do so without a false hit.\n")
+    L.append("- **L1 (exact repeat):** 100% precision and recall by construction (SHA-256 of the "
+             "canonical prompt). Every exact repeat is a guaranteed hit; L2 only adds paraphrase catches.")
+    L.append("- **L2 (semantic):** Pipeline 2 above — zero false hits is the safety contract.\n")
     L.append("## Honesty notes\n")
-    L.append(f"- Curated adversarial set, n={len(scored)}. The Wilson CIs above quantify the small-n "
-             "uncertainty; a real-traffic eval (logged Claude Code prompts) is the next step for a tighter bound.")
+    L.append(f"- Curated adversarial set, n={len(scored)}; Wilson CIs quantify small-n uncertainty. "
+             "A real-traffic eval (logged Claude Code prompts) is the next step for a tighter bound.")
+    L.append("- The guard's antonym lexicon is curated (long-tail/overfit risk); negation and "
+             "direction-swap rules are general. NLI contradiction detection is the heavier, more "
+             "general alternative — ruled in/out by a held-out set.")
     L.append("- Single-turn framing: multi-turn prompts carry more shared context and behave differently.")
     return "\n".join(L)
 
 
-async def run(eval_path: Path = DEFAULT_EVAL) -> tuple[str, dict, list]:
+async def run(eval_path: Path = DEFAULT_EVAL):
     pairs = load_pairs(eval_path)
     scored = await score_pairs(pairs)
     res = analyze(scored)
-    report = render(scored, res, eval_path.name)
-    return report, res, scored
+    return render(scored, res, eval_path.name), res, scored
 
 
 if __name__ == "__main__":
