@@ -112,14 +112,15 @@ async def test_l2_empty_result_returns_none():
 
 
 async def test_l2_uses_threshold():
-    """VS similarity_search MUST be called with score_threshold=SIMILARITY_THRESHOLD (0.95)."""
+    """VS similarity_search MUST be called with score_threshold=SIMILARITY_THRESHOLD (0.90,
+    lowered from 0.95 now that the polarity guard makes the [0.90,0.95) band safe)."""
     with patch("arca.cache._get_vs_index") as m:
         m.return_value.similarity_search.return_value = {"result": {"data_array": []}}
         vec = np.zeros(384, dtype=np.float32)
         await _l2_lookup(vec)
         kwargs = m.return_value.similarity_search.call_args.kwargs
         assert kwargs.get("score_threshold") == SIMILARITY_THRESHOLD
-        assert kwargs["score_threshold"] == 0.95
+        assert kwargs["score_threshold"] == 0.90
 
 
 async def test_l2_passes_list_not_ndarray():
@@ -217,8 +218,10 @@ async def test_post_hook_skips_when_no_state():
     await _post_response(req, b"some sse bytes")
 
 
-async def test_write_back_parallel():
+async def test_write_back_parallel(monkeypatch):
     """_write_back runs Delta + VS via asyncio.gather(..., return_exceptions=True)."""
+    from arca.cache import app
+    monkeypatch.setattr(app.state, "sql", MagicMock(), raising=False)
     with patch("arca.cache._insert_cache_store_sync") as delta, \
          patch("arca.cache._vs_upsert_sync") as vs:
         vec = np.zeros(384, dtype=np.float32)
@@ -227,8 +230,28 @@ async def test_write_back_parallel():
         assert vs.called
 
 
-async def test_delta_failure_falls_back_sqlite():
+async def test_write_back_local_mode_enqueues_sqlite(monkeypatch):
+    """Without a Databricks connection, the SQLite store IS the primary store."""
+    from arca.cache import app
+    monkeypatch.setattr(app.state, "sql", None, raising=False)
+    with patch("arca.cache._insert_cache_store_sync") as delta, \
+         patch("arca.cache._vs_upsert_sync"), \
+         patch("arca.cache._get_sqlite_fallback") as fb:
+        fake = MagicMock()
+        async def _aenq(*a, **kw):
+            return None
+        fake.enqueue = MagicMock(side_effect=_aenq)
+        fb.return_value = fake
+        vec = np.zeros(384, dtype=np.float32)
+        await _write_back("hash123", '{"model":"x"}', vec, b"sse-bytes")
+        assert fake.enqueue.called
+        assert not delta.called
+
+
+async def test_delta_failure_falls_back_sqlite(monkeypatch):
     """Delta exception → SQLiteFallback.enqueue called."""
+    from arca.cache import app
+    monkeypatch.setattr(app.state, "sql", MagicMock(), raising=False)
     with patch("arca.cache._insert_cache_store_sync", side_effect=RuntimeError("delta down")), \
          patch("arca.cache._vs_upsert_sync"), \
          patch("arca.cache._get_sqlite_fallback") as fb:
