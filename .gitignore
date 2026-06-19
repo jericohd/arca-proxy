@@ -71,3 +71,9 @@ arca/INTERVIEW_ANGLE.md
 
 # PyPI publishing
 .pypirc
+
+# Internal working artifacts — not part of the public project
+.planning/
+prep/
+AUDIT.md
+AGENTS.md
