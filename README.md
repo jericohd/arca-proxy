@@ -1,6 +1,6 @@
 # Arca
 
-A developer using Claude Code pays $0 and waits <50ms for any question they — or a teammate — have already asked.
+A developer using Claude Code pays $0 and waits milliseconds for questions they — or a teammate — have already asked. Exact repeats always hit (L1); semantically-equivalent paraphrases hit when they can be served safely (L2, retrieve-then-verify). Measured cache quality is in [`benchmarks/EVAL_METRICS.md`](benchmarks/EVAL_METRICS.md).
 
 ## How It Works
 
@@ -25,10 +25,10 @@ flowchart LR
     anthropic -- "MISS: stream" --> dev
 ```
 
-Arca is a local FastAPI proxy that intercepts Claude Code's outgoing Anthropic API calls, embeds each prompt with `all-MiniLM-L6-v2`, and serves cached responses from a two-tier cache:
+Arca is a local FastAPI proxy that intercepts Claude Code's outgoing Anthropic API calls, embeds each prompt with `BAAI/bge-small-en-v1.5` (384-dim), and serves cached responses from a two-tier cache:
 
-- **L1 LRU** (in-process, keyed on SHA256 of canonical prompt) returns exact-repeat hits in <5ms.
-- **L2 Databricks Vector Search** (Direct Access index, cosine similarity ≥ 0.95) returns semantic near-matches across sessions in <250ms.
+- **L1 LRU** (in-process, keyed on SHA256 of canonical prompt) returns exact-repeat hits in <5ms — 100% precision by construction.
+- **L2 Databricks Vector Search** returns semantic paraphrase matches across sessions in <250ms, using a **retrieve-then-verify** pipeline: cosine similarity ≥ 0.90 retrieves candidates, then a deterministic polarity guard ([`arca/semantic_guard.py`](arca/semantic_guard.py)) rejects meaning-flipping near-misses (encode/decode, `X→Y` vs `Y→X`, negation). On a held-out adversarial eval this lifts L2 precision from 75% (cosine-only at 0.95) to **92%** while raising recall, with no measured wrong answers on the validated flips. See [`benchmarks/EVAL_METRICS.md`](benchmarks/EVAL_METRICS.md).
 - **Cache miss** forwards to Anthropic, streams the response to the client, then asynchronously writes to Delta + upserts the VS index for next time.
 
 Every call is logged to `demo_jedi.arca.usage_log` for cost analytics, and session metrics land in an MLflow experiment at `/Users/{email}/arca`.
@@ -110,7 +110,7 @@ python scripts/demo_seed.py
 
 During the demo:
 1. Ask Claude Code the verbatim first seeded prompt → L1 hit, <5ms.
-2. Ask a paraphrase of the second seeded prompt ("Write a Python function to flatten nested lists") → L2 hit at ≥0.95 similarity.
+2. Ask a paraphrase of the second seeded prompt ("Write a Python function to flatten nested lists") → L2 hit (cosine ≥ 0.90, accepted by the polarity guard).
 3. Ask a fresh prompt → miss forwarded to Anthropic, streamed to client, asynchronously cached.
 
 Run `arca stats` after the demo to show cumulative hit rate and cost saved.

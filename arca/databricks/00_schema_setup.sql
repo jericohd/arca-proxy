@@ -24,14 +24,19 @@ CREATE SCHEMA IF NOT EXISTS arca
 
 -- ============================================================
 -- 3. Semantic cache store
---    - embedding ARRAY<FLOAT> (384 dims, all-MiniLM-L6-v2)
+--    - embedding ARRAY<FLOAT> (384 dims, BAAI/bge-small-en-v1.5)
 --    - Change Data Feed enabled for downstream streaming (Phase 3+)
+--    - REINDEX NOTE: vectors are model-specific. After changing the embedding
+--      model, existing rows hold stale vectors — TRUNCATE cache_store (or rebuild
+--      it) and re-sync the Vector Search index before serving from L2.
+--    - prompt_text is REQUIRED by the L2 polarity guard (retrieve-then-verify);
+--      it must remain a synced column on the Vector Search index.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS demo_jedi.arca.cache_store (
   id              STRING DEFAULT uuid(),
   prompt_hash     STRING NOT NULL,
   prompt_text     STRING NOT NULL,
-  embedding       ARRAY<FLOAT>,          -- 384 dims, all-MiniLM-L6-v2
+  embedding       ARRAY<FLOAT>,          -- 384 dims, BAAI/bge-small-en-v1.5
   response_json   STRING NOT NULL,
   model           STRING,
   input_tokens    INT,
