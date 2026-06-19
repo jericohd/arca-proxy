@@ -41,6 +41,8 @@ MANIFEST
 # Environment / credentials — never commit these
 .env
 .env.*
+# but DO ship the onboarding template (no secrets)
+!.env.example
 .databrickscfg
 *.key
 *.pem
